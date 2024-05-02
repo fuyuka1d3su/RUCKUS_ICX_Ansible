@@ -212,17 +212,20 @@ class Default(FactsBase):
             elif line[0] == ' ': # if we have more config lines for the vlan, starting with 'spaces'
                 tagged_match = re.search(r'^ tagged (.*)', line)
                 untagged_match = re.search(r'^ untagged (.*)', line)
-                spanning_tree_priority_match = re.search(r'spanning-tree priority (\S+)', line)
-                spanning_tree_match = re.search(r'spanning-tree (\S+)', line)
+                spanning_tree_priority_match = re.search(r'spanning-tree (\S+) priority (\S+)', line)
+                spanning_tree_type_match = re.search(r'spanning-tree (\S+)', line)
+                spanning_tree_match = re.search(r'spanning-tree', line)
 
                 if tagged_match:
                     vlan_info["tagged"] = tagged_match.group(1).strip()
                 elif untagged_match:
                     vlan_info["untagged"] = untagged_match.group(1).strip()
                 elif spanning_tree_priority_match:
-                    vlan_info["spanning_tree_priority"] = spanning_tree_priority_match.group(1)
+                    vlan_info["spanning_tree_priority"] = spanning_tree_priority_match.group(2)
+                elif spanning_tree_type_match:
+                    vlan_info["spanning_tree"] = spanning_tree_type_match.group(1)
                 elif spanning_tree_match:
-                    vlan_info["spanning_tree"] = spanning_tree_match.group(1)
+                    vlan_info["spanning_tree"] = "RSTP"
 
                 vlan_info["config"] += '\n%s' % line
                 parsed[key] = vlan_info
@@ -481,6 +484,7 @@ class Interfaces(FactsBase):
             fact['System name'] = self.parse_lldp_system_name(entry)
             fact['System description'] = self.parse_lldp_system_desc(entry)
             fact['Neighbor'] = self.parse_lldp_neighbor(entry)
+            fact['Management address (IPv4)'] = self.parse_lldp_mgmt_address_ipv4(entry)
 
             facts[intf].append(fact)
         return facts
@@ -557,7 +561,7 @@ class Interfaces(FactsBase):
             return match.group(1)
 
     def parse_lldp_system_name(self, data):
-        match = re.search(r'System name *: *"(.+)"$', data, re.M | re.I)
+        match = re.search(r'System name: (.+)$', data, re.M | re.I)
         if match:
             return match.group(1)
 
@@ -573,6 +577,11 @@ class Interfaces(FactsBase):
 
     def parse_lldp_neighbor(self, data):
         match = re.search(r'Neighbor *: *([^,]+)', data, re.M | re.I)
+        if match:
+            return match.group(1)
+
+    def parse_lldp_mgmt_address_ipv4(self, data):
+        match = re.search(r'Management address \(IPv4\): (\S+)', data, re.M | re.I)
         if match:
             return match.group(1)
 
@@ -653,3 +662,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+v
