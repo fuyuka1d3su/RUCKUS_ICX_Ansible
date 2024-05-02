@@ -120,6 +120,10 @@ ansible_net_neighbors:
   description: The list of LLDP neighbors from the remote device
   returned: when interfaces is configured
   type: dict
+ansible_net_vlans:
+  description: The list of VLANS configured on the device
+  returned: when config is configured
+  type: dict
 """
 
 
@@ -148,7 +152,7 @@ class FactsBase(object):
 
 class Default(FactsBase):
 
-    COMMANDS = ['show running-config | include hostname', 'show version', 'show stack']
+    COMMANDS = ['show running-config | include hostname', 'show version', 'show stack', 'show running-config vlan']
 
     def populate(self):
         super(Default, self).run(['skip'])
@@ -166,6 +170,7 @@ class Default(FactsBase):
             self.facts['hostname'] = self.parse_hostname(self.responses[0])
             self.facts['info'] = 'Unit' + det['Unit'] + ':' + det['model'] + ', ' + self.parse_serialnum(data, det['Unit'])
             self.parse_stacks(data)
+            self.facts['vlans'] = self.parse_vlans(self.responses[3])
 
     def parse_serialnum(self, data, unit):
         try:
@@ -178,6 +183,60 @@ class Default(FactsBase):
                     return serial_num
         except:
             return ""
+
+    def parse_vlans(self, data):
+        parsed = dict()
+        key = ''
+        vlan_info = {
+            "name": "null",
+            "vlan_id": "null",
+            "tagged": "null",
+            "untagged": "null",
+            "spanning_tree": "null",
+            "spanning_tree_priority": "null",
+            "config": "null"
+        }
+        for line in data.split('\n'):
+            if len(line) == 0 or line == '!':
+                # resets vlan_info for next vlan to process
+                vlan_info = {
+                    "name": "null",
+                    "vlan_id": "null",
+                    "tagged": "null",
+                    "untagged": "null",
+                    "spanning_tree": "null",
+                    "spanning_tree_priority": "null",
+                    "config": "null"
+                }
+                continue
+            elif line[0] == ' ': # if we have more config lines for the vlan, starting with 'spaces'
+                tagged_match = re.search(r'^ tagged (.*)', line)
+                untagged_match = re.search(r'^ untagged (.*)', line)
+                spanning_tree_priority_match = re.search(r'spanning-tree priority (\S+)', line)
+                spanning_tree_match = re.search(r'spanning-tree (\S+)', line)
+
+                if tagged_match:
+                    vlan_info["tagged"] = tagged_match.group(1).strip()
+                elif untagged_match:
+                    vlan_info["untagged"] = untagged_match.group(1).strip()
+                elif spanning_tree_priority_match:
+                    vlan_info["spanning_tree_priority"] = spanning_tree_priority_match.group(1)
+                elif spanning_tree_match:
+                    vlan_info["spanning_tree"] = spanning_tree_match.group(1)
+
+                vlan_info["config"] += '\n%s' % line
+                parsed[key] = vlan_info
+            else:
+                match = re.search(r'^vlan (\S+)', line)
+                if match:
+                    key = "vlan {0}".format(match.group(1))
+                    name = re.search(r'name (\S+)', line)
+                    if name:
+                        vlan_info["name"] = name.group(1)
+                    vlan_info["config"] = line
+                    vlan_info["vlan_id"] = match.group(1)
+                    parsed[key] = vlan_info
+        return parsed
 
     def parse_version(self, data):
         match = re.search(r'SW: Version ([0-9]+.[0-9]+.[0-9a-zA-Z]+)', data)
